@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat with GeoGebra - 智能几何绘图助手</title>
+  <script src="https://www.geogebra.org/apps/deployggb.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #f5f5f5;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+    }
+    .container {
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+    }
+    .chat-panel {
+      width: 420px;
+      min-width: 380px;
+      max-width: 450px;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border-right: 1px solid #e0e0e0;
+      flex-shrink: 0;
+    }
+    .chat-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      position: relative;
+    }
+    .chat-header h1 { font-size: 18px; font-weight: 600; }
+    .chat-header p { font-size: 12px; opacity: 0.9; margin-top: 4px; }
+    .settings-btn {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .settings-btn:hover { background: rgba(255,255,255,0.3); }
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .message {
+      max-width: 90%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.6;
+      word-wrap: break-word;
+    }
+    .message.user { align-self: flex-end; background: #667eea; color: white; border-bottom-right-radius: 4px; }
+    .message.assistant { align-self: flex-start; background: #f0f0f0; color: #333; border-bottom-left-radius: 4px; }
+    .message.system { align-self: center; background: #fff3cd; color: #856404; font-size: 12px; padding: 8px 12px; }
+    .message.error { align-self: center; background: #f8d7da; color: #721c24; font-size: 12px; }
+    .message.tool { 
+      align-self: flex-start; 
+      background: #e3f2fd; 
+      color: #1565c0; 
+      font-size: 12px; 
+      font-family: monospace;
+      border-left: 3px solid #2196f3;
+    }
+    .message-content pre { background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px; overflow-x: auto; margin: 8px 0; }
+    .message-content code { background: rgba(0,0,0,0.05); padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; }
+    .input-area { padding: 16px; border-top: 1px solid #e0e0e0; background: #fafafa; }
+    .input-wrapper { display: flex; gap: 8px; }
+    textarea {
+      flex: 1;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      resize: none;
+      font-size: 14px;
+      font-family: inherit;
+      min-height: 44px;
+      max-height: 120px;
+    }
+    textarea:focus { outline: none; border-color: #667eea; }
+    button.send-btn {
+      padding: 12px 20px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    button.send-btn:hover:not(:disabled) { background: #5568d3; }
+    button.send-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .geogebra-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      min-width: 0;
+      height: 100%;
+    }
+    .toolbar {
+      padding: 10px 16px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      gap: 8px;
+      background: #fafafa;
+      flex-wrap: wrap;
+    }
+    .toolbar button {
+      padding: 6px 12px;
+      border: 1px solid #ddd;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+    .toolbar button:hover { background: #f0f0f0; border-color: #667eea; }
+    #geogebra-container {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    #geogebra-container.ready {
+      opacity: 1;
+    }
+    #geogebra-container > div,
+    #geogebra-container > div > div,
+    #ggbApplet { width: 100% !important; height: 100% !important; }
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal { background: white; border-radius: 12px; width: 90%; max-width: 500px; max-height: 90vh; overflow: hidden; }
+    .modal-header { padding: 16px 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h2 { font-size: 18px; }
+    .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; }
+    .modal-body { padding: 20px; overflow-y: auto; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; color: #333; }
+    .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: #667eea; }
+    .form-group small { display: block; margin-top: 4px; color: #666; font-size: 12px; }
+    .modal-footer { padding: 16px 20px; border-top: 1px solid #e0e0e0; display: flex; justify-content: flex-end; gap: 8px; }
+    .btn { padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; border: 1px solid #ddd; background: white; }
+    .btn-primary { background: #667eea; color: white; border-color: #667eea; }
+    .btn-primary:hover { background: #5568d3; }
+    .typing-indicator { display: none; gap: 4px; padding: 12px 16px; align-self: flex-start; background: #f0f0f0; border-radius: 12px; }
+    .typing-indicator.active { display: flex; }
+    .typing-indicator span { width: 8px; height: 8px; background: #999; border-radius: 50%; animation: typing 1.4s infinite; }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typing { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-10px); } }
+    .streaming-cursor::after { content: '▋'; animation: blink 1s infinite; color: #667eea; }
+    @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+    @media (max-width: 768px) {
+      .container { flex-direction: column; }
+      .chat-panel { width: 100%; height: 45%; min-width: auto; max-width: none; }
+      .geogebra-panel { height: 55%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="chat-panel">
+      <div class="chat-header">
+        <h1>Chat with GeoGebra</h1>
+        <p>智能几何绘图助手 - 自然语言驱动</p>
+        <button class="settings-btn" onclick="openSettings()">设置</button>
+      </div>
+      <div class="messages" id="messages">
+        <div class="message system">欢迎使用！请在设置中配置 API Key，然后开始对话。</div>
+      </div>
+      <div class="typing-indicator" id="typing-indicator">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="input-area">
+        <div class="input-wrapper">
+          <textarea id="message-input" placeholder="输入您想绘制的图形描述..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
+          <button class="send-btn" id="send-btn" onclick="sendMessage()">发送</button>
+        </div>
+      </div>
+    </div>
+    <div class="geogebra-panel">
+      <div class="toolbar">
+        <button onclick="resetGeoGebra()">重置画布</button>
+        <button onclick="undoGeoGebra()">撤销</button>
+        <button onclick="setPerspective('G')">2D视图</button>
+        <button onclick="setPerspective('T')">3D视图</button>
+        <button onclick="clearChat()">清空对话</button>
+      </div>
+      <div id="geogebra-container"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>设置</h2>
+        <button class="modal-close" onclick="closeSettings()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>API 提供商</label>
+          <select id="api-provider">
+            <option value="openai">OpenAI</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="google">Google (Gemini)</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="azure">Azure OpenAI</option>
+            <option value="openai-compatible">OpenAI Compatible</option>
+          </select>
+          <small id="provider-hint">选择 API 提供商</small>
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <input type="password" id="api-key" placeholder="sk-...">
+          <small>您的 API Key 仅存储在本地浏览器中</small>
+        </div>
+        <div class="form-group">
+          <label>模型</label>
+          <input type="text" id="api-model" placeholder="gpt-4o">
+          <small id="model-hint">例如：gpt-4o, deepseek-chat</small>
+        </div>
+        <div class="form-group" id="base-url-group" style="display: none;">
+          <label>Base URL</label>
+          <input type="text" id="api-base-url" placeholder="https://api.example.com/v1">
+          <small>自定义 API 的基础 URL</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeSettings()">取消</button>
+        <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ==================== 全局变量 ====================
+let ggbApplet = null;
+let ggbAppletReady = false;
+let ggbAppletSelection = [];
+let messages = [];
+let isProcessing = false;
+let currentStreamDiv = null;
+let pendingToolCalls = [];
+
+// 从 localStorage 加载设置
+const settings = JSON.parse(localStorage.getItem('cwg-intermediate-settings') || '{}');
+
+// ==================== GeoGebra 初始化 ====================
+function initGeoGebra() {
+  const parameters = {
+    id: "ggbApplet",
+    appName: "classic",
+    width: "100%",
+    height: "100%",
+    // 使用代数+几何视图 (AG)，让左侧显示表达式列表
+    perspective: "AG",
+    showToolBar: true,
+    showAlgebraInput: true,
+    showMenuBar: true,
+    algebraInputPosition: "bottom",
+    enableLabelDrags: true,
+    enableShiftDragZoom: true,
+    enableRightClick: true,
+    enable3d: true,
+    enableUndoRedo: true,
+    errorDialogsActive: false,
+    showResetIcon: false,
+    useBrowserForJS: true,
+    allowStyleBar: true,
+    appletOnLoad: onGgbLoad,
+    // 启用坐标轴和网格
+    showAxes: true,
+    showGrid: true
+  };
+  
+  const applet = new GGBApplet(parameters, true);
+  applet.setHTML5Codebase('https://www.geogebra.org/apps/5.0.741.0/web3d/');
+  applet.inject('geogebra-container');
+}
+
+function onGgbLoad(api) {
+  ggbApplet = api;
+  ggbAppletReady = true;
+  
+  api.registerClientListener(function(event) {
+    switch(event.type) {
+      case 'select':
+        if (!ggbAppletSelection.includes(event.target)) {
+          ggbAppletSelection.push(event.target);
+        }
+        break;
+      case 'deselect':
+        ggbAppletSelection = ggbAppletSelection.filter(l => l !== event.target);
+        break;
+    }
+  });
+  
+  // 延迟设置坐标系，确保 GeoGebra 完全加载
+  setTimeout(() => {
+    try {
+      // 先确保视角为代数+几何视图（AG），保持左侧代数面板
+      api.setPerspective('AG');
+      
+      // 使用 ZoomIn 命令设置视野，不会重置视角
+      api.evalCommand('ZoomIn[-1, -1, 15, 10]');
+      
+      // 设置坐标轴交叉在原点
+      api.evalCommand('SetAxesCrossing[0, 0]');
+      
+      // 显示网格
+      api.evalCommand('ShowGrid[true]');
+      
+      console.log('坐标系已设置: x=-1~15, y=-1~10');
+    } catch (e) {
+      console.error('设置坐标系失败:', e);
+    }
+    
+    // 显示容器
+    document.getElementById('geogebra-container').classList.add('ready');
+  }, 500);
+  
+  resizeGeoGebra();
+  setTimeout(resizeGeoGebra, 500);
+  
+  console.log('GeoGebra 加载完成');
+}
+
+function resizeGeoGebra() {
+  if (!ggbApplet) return;
+  const panel = document.querySelector('.geogebra-panel');
+  const toolbar = document.querySelector('.toolbar');
+  if (panel && toolbar) {
+    const width = panel.clientWidth;
+    const height = panel.clientHeight - toolbar.clientHeight;
+    if (width > 0 && height > 0) {
+      ggbApplet.setSize(width, height);
+    }
+  }
+}
+
+// ==================== GeoGebra 操作 ====================
+function resetGeoGebra() {
+  if (ggbApplet) {
+    ggbApplet.reset();
+    ggbAppletSelection = [];
+    addMessage('system', '画布已重置');
+    
+    // 重置后重新设置坐标系
+    setTimeout(() => {
+      try {
+        ggbApplet.setPerspective('AG');
+        ggbApplet.evalCommand('ZoomIn[-1, -1, 15, 10]');
+        ggbApplet.evalCommand('SetAxesCrossing[0, 0]');
+        ggbApplet.evalCommand('ShowGrid[true]');
+      } catch (e) {
+        console.error('重置后设置坐标系失败:', e);
+      }
+    }, 300);
+  }
+}
+
+function undoGeoGebra() {
+  if (ggbApplet) {
+    ggbApplet.undo();
+  }
+}
+
+function setPerspective(mode) {
+  if (ggbApplet) {
+    ggbApplet.setPerspective(mode);
+    return true;
+  }
+  return false;
+}
+
+function executeGeoGebraCommand(command) {
+  if (!ggbApplet) {
+    throw new Error('GeoGebra 尚未准备好');
+  }
+  try {
+    const label = ggbApplet.evalCommandGetLabels(command);
+    return { success: true, label: label || null, error: null };
+  } catch (e) {
+    return { success: false, label: null, error: e.message };
+  }
+}
+
+function deleteGeoGebraObject(label) {
+  if (!ggbApplet) return false;
+  try {
+    ggbApplet.deleteObject(label);
+    ggbAppletSelection = ggbAppletSelection.filter(l => l !== label);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function getCanvasContext() {
+  if (!ggbApplet) {
+    return { elements: [], expressions: [], selectedObjects: [] };
+  }
+  try {
+    const xml = ggbApplet.getXML();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, 'text/xml');
+    
+    const elements = [];
+    const elementNodes = doc.querySelectorAll('element');
+    elementNodes.forEach(node => {
+      const label = node.getAttribute('label');
+      const type = node.getAttribute('type');
+      const coords = node.querySelector('coords');
+      if (label && type) {
+        const elem = { label, type };
+        if (coords) {
+          elem.coords = {
+            x: coords.getAttribute('x'),
+            y: coords.getAttribute('y'),
+            z: coords.getAttribute('z') || '0'
+          };
+        }
+        elements.push(elem);
+      }
+    });
+    
+    const expressions = [];
+    const exprNodes = doc.querySelectorAll('expression');
+    exprNodes.forEach(node => {
+      const label = node.getAttribute('label');
+      const exp = node.getAttribute('exp');
+      if (label && exp) {
+        expressions.push({ label, exp });
+      }
+    });
+    
+    return {
+      elements: elements,
+      expressions: expressions,
+      selectedObjects: [...ggbAppletSelection]
+    };
+  } catch (e) {
+    return { elements: [], expressions: [], selectedObjects: [...ggbAppletSelection] };
+  }
+}
+
+function setUndoPoint() {
+  if (ggbApplet) {
+    try {
+      ggbApplet.setUndoPoint();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  return false;
+}
+
+// ==================== 聊天功能 ====================
+function handleKeyDown(event) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    sendMessage();
+  }
+}
+
+function addMessage(role, content, isStreaming = false) {
+  const messagesDiv = document.getElementById('messages');
+  
+  if (isStreaming && currentStreamDiv) {
+    // 更新流式消息
+    const contentDiv = currentStreamDiv.querySelector('.message-content');
+    contentDiv.innerHTML = marked.parse(content);
+    renderMathInElement(contentDiv, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false}
+      ],
+      throwOnError: false
+    });
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    return currentStreamDiv;
+  }
+  
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `message ${role}`;
+  
+  const contentDiv = document.createElement('div');
+  contentDiv.className = 'message-content';
+  
+  if (role === 'assistant') {
+    contentDiv.innerHTML = marked.parse(content);
+    messageDiv.appendChild(contentDiv);
+    messagesDiv.appendChild(messageDiv);
+    renderMathInElement(contentDiv, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false}
+      ],
+      throwOnError: false
+    });
+  } else {
+    contentDiv.textContent = content;
+    messageDiv.appendChild(contentDiv);
+    messagesDiv.appendChild(messageDiv);
+  }
+  
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  
+  if (role !== 'tool') {
+    messages.push({ role, content });
+  }
+  
+  return messageDiv;
+}
+
+function showTyping() {
+  document.getElementById('typing-indicator').classList.add('active');
+}
+
+function hideTyping() {
+  document.getElementById('typing-indicator').classList.remove('active');
+}
+
+// ==================== 流式 Agent 模式 ====================
+async function sendMessage() {
+  if (isProcessing) return;
+  
+  const input = document.getElementById('message-input');
+  const sendBtn = document.getElementById('send-btn');
+  const content = input.value.trim();
+  
+  if (!content) return;
+  
+  if (!settings.apiKey) {
+    addMessage('error', '请先点击右上角"设置"配置 API Key');
+    openSettings();
+    return;
+  }
+  
+  // 添加用户消息
+  addMessage('user', content);
+  input.value = '';
+  input.style.height = 'auto';
+  
+  isProcessing = true;
+  sendBtn.disabled = true;
+  showTyping();
+  
+  try {
+    await streamChat(content);
+  } catch (error) {
+    hideTyping();
+    addMessage('error', '错误: ' + error.message);
+    console.error(error);
+  } finally {
+    isProcessing = false;
+    sendBtn.disabled = false;
+    currentStreamDiv = null;
+  }
+}
+
+async function streamChat(userMessage) {
+  const canvasContext = getCanvasContext();
+  
+  const requestBody = {
+    messages: [...messages, { role: 'user', content: userMessage }],
+    provider: settings.provider || 'openai',
+    model: settings.model || 'gpt-4o',
+    apiKey: settings.apiKey,
+    baseUrl: settings.baseUrl || undefined,
+    canvasContext: canvasContext
+  };
+  
+  const response = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody)
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error);
+  }
+  
+  // 处理 SSE 流
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let currentContent = '';
+  let pendingToolCalls = [];
+  
+  hideTyping();
+  
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const dataStr = line.slice(6);
+        
+        // 处理不同类型的数据
+        if (dataStr === '[DONE]') {
+          currentStreamDiv?.classList.remove('streaming-cursor');
+          continue;
+        }
+        
+        try {
+          const data = JSON.parse(dataStr);
+          
+          // AI SDK v5 的数据格式
+          if (data.type === 'text') {
+            currentContent += data.value || data.content || '';
+            if (!currentStreamDiv) {
+              currentStreamDiv = addMessage('assistant', currentContent, true);
+              currentStreamDiv.classList.add('streaming-cursor');
+            } else {
+              addMessage('assistant', currentContent, true);
+            }
+          } else if (data.type === 'tool-call') {
+            const toolData = {
+              toolName: data.toolCall?.toolName || data.toolName,
+              args: data.toolCall?.args || data.args,
+              result: data.toolCall?.result
+            };
+            pendingToolCalls.push(toolData);
+            await handleToolCall(toolData);
+          } else if (data.type === 'tool-result') {
+            // 工具结果
+            console.log('Tool result:', data);
+          } else if (data.type === 'done') {
+            currentStreamDiv?.classList.remove('streaming-cursor');
+          } else if (data.content) {
+            // 简单文本格式
+            currentContent += data.content;
+            if (!currentStreamDiv) {
+              currentStreamDiv = addMessage('assistant', currentContent, true);
+              currentStreamDiv.classList.add('streaming-cursor');
+            } else {
+              addMessage('assistant', currentContent, true);
+            }
+          }
+        } catch (e) {
+          // 不是 JSON，可能是纯文本
+          if (dataStr.trim()) {
+            currentContent += dataStr;
+            if (!currentStreamDiv) {
+              currentStreamDiv = addMessage('assistant', currentContent, true);
+              currentStreamDiv.classList.add('streaming-cursor');
+            } else {
+              addMessage('assistant', currentContent, true);
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // 流结束后，解析并执行 geogebra 代码块
+  if (currentContent) {
+    await executeGeoGebraBlocks(currentContent);
+  }
+  
+  return pendingToolCalls;
+}
+
+// 解析并执行回复中的 geogebra 代码块
+async function executeGeoGebraBlocks(content) {
+  // 匹配 ```geogebra 代码块，支持结尾有或无换行符
+  const regex = /```geogebra\n?([\s\S]*?)```/g;
+  let match;
+  let hasCommands = false;
+  
+  while ((match = regex.exec(content)) !== null) {
+    const codeBlock = match[1].trim();
+    const commands = codeBlock.split('\n').map(cmd => cmd.trim()).filter(cmd => cmd);
+    
+    if (commands.length > 0) {
+      hasCommands = true;
+      addMessage('tool', `📝 执行 ${commands.length} 条 GeoGebra 命令...`);
+      
+      for (const command of commands) {
+        if (command.toLowerCase() === 'reset()') {
+          resetGeoGebra();
+          continue;
+        }
+        
+        const result = executeGeoGebraCommand(command);
+        if (result.success) {
+          console.log('Executed:', command, '-> label:', result.label);
+        } else {
+          addMessage('tool', `❌ 命令失败: ${command} - ${result.error}`);
+        }
+        
+        // 小延迟让 UI 更流畅
+        await new Promise(r => setTimeout(r, 50));
+      }
+      
+      addMessage('tool', '✅ 命令执行完成');
+    }
+  }
+  
+  return hasCommands;
+}
+
+async function handleToolCall(toolCall) {
+  // 处理不同格式的工具调用数据
+  const toolName = toolCall.toolName || toolCall.function?.name || toolCall.name;
+  const args = toolCall.args || toolCall.function?.arguments || toolCall.parameters || {};
+  const serverResult = toolCall.result;
+  
+  console.log('Handle tool call:', toolName, args);
+  
+  // 显示工具调用
+  addMessage('tool', `🔧 ${toolName}(${JSON.stringify(args)})`);
+  
+  // searchGeoGebraCommands 的结果已由服务器返回，无需前端处理
+  // 其他工具（executeGeoGebraCommand, setPerspective, getCanvasContext）
+  // 现在通过 geogebra 代码块直接输出，在 executeGeoGebraBlocks 中处理
+  
+  console.log('Tool result:', toolName, serverResult);
+  return serverResult;
+}
+
+// ==================== 设置 ====================
+function openSettings() {
+  document.getElementById('settings-modal').classList.add('active');
+  document.getElementById('api-provider').value = settings.provider || 'openai';
+  document.getElementById('api-key').value = settings.apiKey || '';
+  document.getElementById('api-model').value = settings.model || '';
+  document.getElementById('api-base-url').value = settings.baseUrl || '';
+  updateProviderUI(settings.provider || 'openai');
+}
+
+function closeSettings() {
+  document.getElementById('settings-modal').classList.remove('active');
+}
+
+function saveSettings() {
+  settings.provider = document.getElementById('api-provider').value;
+  settings.apiKey = document.getElementById('api-key').value.trim();
+  settings.model = document.getElementById('api-model').value.trim();
+  settings.baseUrl = document.getElementById('api-base-url').value.trim();
+  
+  localStorage.setItem('cwg-intermediate-settings', JSON.stringify(settings));
+  closeSettings();
+  addMessage('system', '设置已保存');
+}
+
+// 根据提供商更新 UI
+function updateProviderUI(provider) {
+  const baseUrlGroup = document.getElementById('base-url-group');
+  const modelHint = document.getElementById('model-hint');
+  const providerHint = document.getElementById('provider-hint');
+  
+  // 显示/隐藏 Base URL 输入
+  if (provider === 'openai-compatible' || provider === 'azure') {
+    baseUrlGroup.style.display = 'block';
+  } else {
+    baseUrlGroup.style.display = 'none';
+  }
+  
+  // 更新提示文本
+  switch (provider) {
+    case 'openai':
+      providerHint.textContent = '使用 OpenAI API';
+      modelHint.textContent = '例如：gpt-4o, gpt-4o-mini, o1';
+      break;
+    case 'deepseek':
+      providerHint.textContent = '使用 DeepSeek API';
+      modelHint.textContent = '例如：deepseek-chat, deepseek-coder';
+      break;
+    case 'google':
+      providerHint.textContent = '使用 Google Gemini API';
+      modelHint.textContent = '例如：gemini-2.0-flash, gemini-2.5-pro-exp-03-25';
+      break;
+    case 'anthropic':
+      providerHint.textContent = '使用 Anthropic Claude API';
+      modelHint.textContent = '例如：claude-3-5-sonnet-20241022, claude-3-opus-20240229';
+      break;
+    case 'azure':
+      providerHint.textContent = '使用 Azure OpenAI Service';
+      modelHint.textContent = '例如：gpt-4o, gpt-4';
+      break;
+    case 'openai-compatible':
+      providerHint.textContent = '使用兼容 OpenAI 格式的 API';
+      modelHint.textContent = '根据服务商填写模型名称';
+      break;
+    default:
+      providerHint.textContent = '选择 API 提供商';
+      modelHint.textContent = '例如：gpt-4o, deepseek-chat';
+  }
+}
+
+function clearChat() {
+  messages = [];
+  document.getElementById('messages').innerHTML = '';
+  addMessage('system', '对话已清空');
+}
+
+// ==================== 初始化 ====================
+window.onload = function() {
+  initGeoGebra();
+  
+  const textarea = document.getElementById('message-input');
+  textarea.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+  
+  // 提供商选择器事件
+  const providerSelect = document.getElementById('api-provider');
+  if (providerSelect) {
+    providerSelect.addEventListener('change', function() {
+      updateProviderUI(this.value);
+    });
+  }
+  
+  const resizeObserver = new ResizeObserver(() => {
+    if (ggbAppletReady) {
+      setTimeout(resizeGeoGebra, 100);
+    }
+  });
+  const container = document.getElementById('geogebra-container');
+  if (container) {
+    resizeObserver.observe(container);
+  }
+};
+</script>
+</body>
+</html>
